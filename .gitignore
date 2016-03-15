@@ -1,3 +1,15 @@
+# generational snapshots
+*_gen_*.json
+
+# generational images
+*_gen_*.bmp
+
+# pyCharm
+.idea/
+
+# 'quick test' scripts
+qt*.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
