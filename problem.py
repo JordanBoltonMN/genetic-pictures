@@ -172,7 +172,6 @@ class Problem(object):
         }
 
 if __name__ == "__main__":
-    problem = Problem(image_name="first.jpg")
-    # problem = Problem(snapshot_name="first.jpg")
+    problem = Problem(image_name="target.jpg")
+    # problem = Problem(snapshot_name="target.jpg")
     problem.run()
-    # problem.next_generation()

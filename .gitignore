@@ -1,3 +1,6 @@
+# pictures
+*.jpg
+
 # generational snapshots
 *_gen_*.json
 
