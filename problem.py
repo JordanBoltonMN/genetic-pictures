@@ -45,16 +45,21 @@ class Problem(object):
         self.population = self.create_population(**init_kwargs)
 
     def run(self):
+        if self.current_generation == 0:
+            print "Updating fitness before starting.",
+            self.population.update_fitness()
+            print "Done."
+
         for _ in range(self.current_generation, self.generations):
             self.next_generation()
             self.save_snapshot()
 
     def next_generation(self):
+        self.current_generation += 1
         print "Starting generation: {0}".format(self.current_generation)
         print "\tBreeding.",
         self.population.breed()
         print "Done"
-        self.current_generation += 1
 
         if (self.current_generation % self.picture_every) == 0:
             self.save_image()
@@ -62,7 +67,7 @@ class Problem(object):
     def default_kwargs(self):
         return {
             "current_generation" : 0,
-            "generations" : 2,
+            "generations" : 10,
             "picture_every" : 1,
             "evaluator_name" : "BaseEvaluator",
             "population_name" : "BasePopulation",
@@ -89,6 +94,7 @@ class Problem(object):
 
         image_name = snapshot["problem"]["image_name"]
         result = self.kwargs_from_image_name(image_name)
+        result.update(snapshot["problem"])
         result.update(snapshot["population"])
 
         new_md5 = md5(image_name)
@@ -129,7 +135,7 @@ class Problem(object):
         }
         print "Done."
 
-        print "Saving json.",
+        print "\tSaving json.",
         with open(fname, "w") as f:
             json.dump(d, f, sort_keys=True, indent=4)
         print "Done."
@@ -140,15 +146,19 @@ class Problem(object):
 
         print "Creating image {0}:".format(fname)
         print "\tGenerating Image.",
+
         for individual in self.population.individuals():
             representation = individual.create_mask(self)
             for (y, x) in np.argwhere(representation.any(axis=-1)):
                 result[y][x] = representation[y][x]
-        print "Done"
 
+
+        print "Done"
         print "\tSaving Image",
+
         result = Image.fromarray(result, mode="RGB")
         result.save(fname)
+
         print "Done."
 
     def generation_filename(self):
@@ -172,6 +182,7 @@ class Problem(object):
         }
 
 if __name__ == "__main__":
-    problem = Problem(image_name="target.jpg")
-    # problem = Problem(snapshot_name="target.jpg")
+    # problem = Problem(image_name="target.jpg")
+    problem = Problem(snapshot_name="target.jpg")
+    # problem.save_image()
     problem.run()

@@ -30,13 +30,16 @@ class BasePopulation(object):
             self.pool = self.load_pool(init_kwargs["pool"])
 
     def default_kwargs(self):
+        size = 10000
+        tournament_size = int(size * 0.025)
+
         return {
             "species_name" : "Ellipse",
-            "size" : 1000,
-            "tournament_size" : 100,
-            "elite_count" : 10,
+            "size" : size,
+            "tournament_size" : tournament_size,
+            "elite_count" : 20,
             "mutation_rate" : 0.05,
-            "processes" : 4,
+            "processes" : 2,
         }
 
     def individuals(self):
@@ -50,13 +53,12 @@ class BasePopulation(object):
 
     def update_fitness(self):
         individuals = [(self.problem, i) for i in self.pool]
-        thread_pool = Pool(processes=4)
+        thread_pool = Pool(processes=self.processes)
         self.pool = thread_pool.map(update_individual_fitness, individuals)
         self.pool.sort(reverse=True, key=lambda individual: individual.fitness)
 
     def breed(self):
         # sort by highest fitness to lowest
-        self.update_fitness()
         self.pool.sort(reverse=True, key=lambda individual: individual.fitness)
 
         # grab first 'elite_count' individuals
@@ -76,12 +78,13 @@ class BasePopulation(object):
             new_pool.append(child)
 
         self.pool = new_pool
+        self.update_fitness()
 
     def tournament(self):
         size = self.tournament_size
-        tourny = [random.choice(self.pool) for _ in range(size)]
-        tourny.sort(key=lambda individual: individual.fitness, reverse=True)
-        return tourny[0]
+        tourney = [random.choice(self.pool) for _ in range(size)]
+        tourney.sort(key=lambda individual: individual.fitness, reverse=True)
+        return tourney[0]
 
     def should_mutate(self):
         return random.random() <= self.mutation_rate
