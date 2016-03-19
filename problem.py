@@ -7,7 +7,6 @@ import cv2
 import numpy as np
 from PIL import Image
 
-import evaluators
 import populations
 
 def md5(fname):
@@ -39,20 +38,25 @@ class Problem(object):
         self.image_name = init_kwargs["image_name"]
         self.image = init_kwargs["image"]
         self.image_md5 = init_kwargs["image_md5"]
+        self.dst_name = init_kwargs.get("dst_name", self.image_name)
         self.height, self.width, _ = self.image.shape
 
-        self.evaluator = self.create_evaluator(**init_kwargs)
         self.population = self.create_population(**init_kwargs)
 
     def run(self):
         if self.current_generation == 0:
-            print "Updating fitness before starting.",
-            self.population.update_fitness()
+            print "Setting up problem.",
+            self.setup_problem()
             print "Done."
 
         for _ in range(self.current_generation, self.generations):
             self.next_generation()
-            self.save_snapshot()
+
+    def setup_problem(self):
+        self.population.update_fitness()
+        self.save_snapshot()
+        if self.should_save_image():
+            self.save_image()
 
     def next_generation(self):
         self.current_generation += 1
@@ -61,7 +65,9 @@ class Problem(object):
         self.population.breed()
         print "Done"
 
-        if (self.current_generation % self.picture_every) == 0:
+        self.save_snapshot()
+
+        if self.should_save_image():
             self.save_image()
 
     def default_kwargs(self):
@@ -69,7 +75,6 @@ class Problem(object):
             "current_generation" : 0,
             "generations" : 10,
             "picture_every" : 1,
-            "evaluator_name" : "BaseEvaluator",
             "population_name" : "BasePopulation",
         }
 
@@ -81,14 +86,20 @@ class Problem(object):
         }
 
     def kwargs_from_snapshot_name(self, snapshot_name):
-        # all which match the generic name
-        similar = glob.glob("{0}_gen_*.json".format(snapshot_name))
-        if not similar:
-            error = "No snapshots of name {0} exist".format(snapshot_name)
-            raise ValueError(error)
+        # was given a specific snapshot
+        if "_gen_" in snapshot_name and os.path.isfile(snapshot_name):
+            snapshot_fname = snapshot_name
+        else:
+            # was given a generic name, find the latest generation snapshot
+            similar = glob.glob("{0}_gen_*.json".format(snapshot_name))
+            # no snapshots exist for the given generic name
+            if not similar:
+                error = "No snapshots of name {0} exist".format(snapshot_name)
+                raise ValueError(error)
 
-        # highest generation file
-        snapshot_fname = max(similar)
+            # snapshot of the latest generation
+            snapshot_fname = max(similar)
+
         with open(snapshot_fname, "r") as f:
             snapshot = json.load(f)
 
@@ -97,6 +108,7 @@ class Problem(object):
         result.update(snapshot["problem"])
         result.update(snapshot["population"])
 
+        # double check that the loaded snapshot is for the right image
         new_md5 = md5(image_name)
         old_md5 = result["image_md5"]
         if new_md5 != old_md5:
@@ -108,15 +120,9 @@ class Problem(object):
 
         return result
 
-    def create_evaluator(self, **kwargs):
-        evaluator_name = kwargs["evaluator_name"]
-        if evaluator_name not in evaluators.name_to_obj:
-            error = "Unknown evaluator '{0}'".format(evaluator_name)
-            raise ValueError(error)
-        else:
-            return evaluators.name_to_obj[evaluator_name]()
-
     def create_population(self, **kwargs):
+        # instantiate the population for the given name
+        # look in populations.py to see how name_to_obj is generated
         population_name = kwargs["population_name"]
         if population_name not in populations.name_to_obj:
             error = "Unknown population '{0}'".format(population_name)
@@ -129,6 +135,7 @@ class Problem(object):
 
         print "Creating snapshot {0}.".format(fname)
         print "\tGenerating json.",
+        # used on a Problem's init
         d = {
             "problem" : self.json(),
             "population" : self.population.json()
@@ -140,18 +147,25 @@ class Problem(object):
             json.dump(d, f, sort_keys=True, indent=4)
         print "Done."
 
+    def should_save_image(self):
+        if not self.picture_every:
+            return False
+        else:
+            return (self.current_generation % self.picture_every) == 0
+
     def save_image(self):
-        fname = self.generation_filename() + ".bmp"
+        fname = self.generation_filename() + ".png"
         result = np.zeros_like(self.image)
 
         print "Creating image {0}:".format(fname)
         print "\tGenerating Image.",
 
         for individual in self.population.individuals():
-            representation = individual.create_mask(self)
+            # 3D numpy array, (y, x, RGB)
+            representation = individual.create_representation()
+            # blit pixels to screen
             for (y, x) in np.argwhere(representation.any(axis=-1)):
                 result[y][x] = representation[y][x]
-
 
         print "Done"
         print "\tSaving Image",
@@ -162,7 +176,7 @@ class Problem(object):
         print "Done."
 
     def generation_filename(self):
-        root = os.path.basename(self.image_name)
+        root = os.path.basename(self.dst_name)
         padded_generation = str(self.current_generation).zfill(7)
 
         return "{root}_gen_{padded_generation}".format(
@@ -173,16 +187,36 @@ class Problem(object):
     def json(self):
         return {
             "image_name" : self.image_name,
+            "dst_name" : self.dst_name,
             "image_md5" : self.image_md5,
             "current_generation" : self.current_generation,
             "generations" : self.generations,
             "picture_every" : self.picture_every,
-            "evaluator_name" : self.evaluator.__class__.__name__,
             "population_name" : self.population.__class__.__name__,
         }
 
+def create_images(glob_pattern=None, problem_cls=None, limited_range=None):
+    if glob_pattern is None:
+        glob_pattern = "*_gen_*"
+
+    if problem_cls is None:
+        problem_cls = Problem
+
+    for filepath in glob.glob(glob_pattern):
+        problem = problem_cls(snapshot_name=filepath)
+        if limited_range and problem.current_generation not in limited_range:
+            continue
+        problem.save_image()
+
 if __name__ == "__main__":
-    # problem = Problem(image_name="target.jpg")
-    problem = Problem(snapshot_name="target.jpg")
-    # problem.save_image()
+    problem = Problem(
+        image_name="target.png",
+        dst_name="target",
+        generations=20,
+    )
+    problem = Problem(
+        snapshot_name="target.png",
+        dst_name="target",
+        generations=20,
+    )
     problem.run()

@@ -1,9 +1,8 @@
 import random
-import numpy as np
 from multiprocessing import Pool
 
+import evaluators
 import species
-
 
 class BasePopulation(object):
     def __init__(self, problem, **kwargs):
@@ -28,19 +27,36 @@ class BasePopulation(object):
             self.pool = self.generate_pool()
         else:
             self.pool = self.load_pool(init_kwargs["pool"])
+            self.size = len(self.pool)
+
+        self.evaluator_name = init_kwargs["evaluator_name"]
+        self.evaluator = self.create_evaluator(**init_kwargs)
 
     def default_kwargs(self):
-        size = 10000
-        tournament_size = int(size * 0.025)
+        size = 100
+        tournament_size = int(size * 0.1)
+        elite_count = int(size * 0.001)
 
         return {
             "species_name" : "Ellipse",
+            "evaluator_name" : "RGBDifference",
+
             "size" : size,
             "tournament_size" : tournament_size,
-            "elite_count" : 20,
-            "mutation_rate" : 0.05,
-            "processes" : 2,
+            "elite_count" : elite_count,
+            "mutation_rate" : 0.1,
+            "processes" : 4,
         }
+
+    def create_evaluator(self, **kwargs):
+        # instantiate the evaluator for the given name
+        # look in evaluators.py to see how name_to_obj is generated
+        evaluator_name = kwargs["evaluator_name"]
+        if evaluator_name not in evaluators.name_to_obj:
+            error = "Unknown evaluator '{0}'".format(evaluator_name)
+            raise ValueError(error)
+        else:
+            return evaluators.name_to_obj[evaluator_name](**kwargs)
 
     def individuals(self):
         return self.pool
@@ -52,14 +68,18 @@ class BasePopulation(object):
         return [self.species_cls(self.problem, **d) for d in pool]
 
     def update_fitness(self):
-        individuals = [(self.problem, i) for i in self.pool]
-        thread_pool = Pool(processes=self.processes)
-        self.pool = thread_pool.map(update_individual_fitness, individuals)
-        self.pool.sort(reverse=True, key=lambda individual: individual.fitness)
+        evaluator = self.evaluator
+        image = self.problem.image
+        individuals = [(image, evaluator, i) for i in self.pool]
+
+        processes = Pool(processes=self.processes)
+        self.pool = processes.map(update_individual_fitness, individuals)
+        self._sort_pool(self.pool)
+        processes.close()
 
     def breed(self):
-        # sort by highest fitness to lowest
-        self.pool.sort(reverse=True, key=lambda individual: individual.fitness)
+        # sort by fitness for elite_count
+        self._sort_pool(self.pool)
 
         # grab first 'elite_count' individuals
         n_elites = self.elite_count
@@ -83,7 +103,7 @@ class BasePopulation(object):
     def tournament(self):
         size = self.tournament_size
         tourney = [random.choice(self.pool) for _ in range(size)]
-        tourney.sort(key=lambda individual: individual.fitness, reverse=True)
+        self._sort_pool(tourney)
         return tourney[0]
 
     def should_mutate(self):
@@ -91,24 +111,30 @@ class BasePopulation(object):
 
     def json(self):
         return {
+            "species_name" : self.species_name,
+            "evaluator_name" : self.evaluator_name,
+
             "elite_count" : self.elite_count,
             "tournament_size" : self.tournament_size,
             "mutation_rate" : self.mutation_rate,
             "processes" : self.processes,
 
-            "species_name" : self.species_name,
             "pool" : [individual.json() for individual in self.pool]
         }
 
+    def _sort_pool(self, pool):
+        pool.sort(
+            key=lambda individual: individual.fitness,
+            reverse=self.evaluator.reverse_sort,
+        )
 
-def update_individual_fitness((problem, individual)):
+def update_individual_fitness((image, evaluator, individual)):
     """
     used by multiprocessing.Pool.map, which can only take a single value,
     but the function needs two arguments which is why the syntax is weird
     """
-    mask = individual.create_mask(problem)
-    overlap = np.bitwise_and(problem.image, mask)
-    individual.fitness = problem.evaluator(problem.image, overlap)
+    representation = individual.create_representation()
+    individual.fitness = evaluator(image, representation)
     return individual
 
 
