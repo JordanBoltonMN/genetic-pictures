@@ -45,9 +45,8 @@ class Problem(object):
 
     def run(self):
         if self.current_generation == 0:
-            print "Setting up problem.",
+            print "Performing setup for generation 0."
             self.setup_problem()
-            print "Done."
 
         for _ in range(self.current_generation, self.generations):
             self.next_generation()
@@ -91,7 +90,12 @@ class Problem(object):
             snapshot_fname = snapshot_name
         else:
             # was given a generic name, find the latest generation snapshot
-            similar = glob.glob("{0}_gen_*.json".format(snapshot_name))
+            snapshot_pattern = "{0}_gen_*.json".format(snapshot_name)
+            glob_pattern = os.path.join(
+                self.results_directory(),
+                snapshot_pattern
+            )
+            similar = glob.glob(glob_pattern)
             # no snapshots exist for the given generic name
             if not similar:
                 error = "No snapshots of name {0} exist".format(snapshot_name)
@@ -120,10 +124,12 @@ class Problem(object):
 
         return result
 
+
     def create_population(self, **kwargs):
         # instantiate the population for the given name
         # look in populations.py to see how name_to_obj is generated
-        population_name = kwargs["population_name"]
+        population_name = kwargs.get("population_name")
+
         if population_name not in populations.name_to_obj:
             error = "Unknown population '{0}'".format(population_name)
             raise ValueError(error)
@@ -131,9 +137,9 @@ class Problem(object):
             return populations.name_to_obj[population_name](self, **kwargs)
 
     def save_snapshot(self):
-        fname = self.generation_filename() + ".json"
+        filepath = self.generate_filepath("json")
 
-        print "Creating snapshot {0}.".format(fname)
+        print "Creating snapshot {0}.".format(filepath)
         print "\tGenerating json.",
         # used on a Problem's init
         d = {
@@ -143,7 +149,7 @@ class Problem(object):
         print "Done."
 
         print "\tSaving json.",
-        with open(fname, "w") as f:
+        with open(filepath, "w") as f:
             json.dump(d, f, sort_keys=True, indent=4)
         print "Done."
 
@@ -154,10 +160,10 @@ class Problem(object):
             return (self.current_generation % self.picture_every) == 0
 
     def save_image(self):
-        fname = self.generation_filename() + ".png"
+        filepath = self.generate_filepath("png")
         result = np.zeros_like(self.image)
 
-        print "Creating image {0}:".format(fname)
+        print "Creating image {0}:".format(filepath)
         print "\tGenerating Image.",
 
         for individual in self.population.individuals():
@@ -171,18 +177,34 @@ class Problem(object):
         print "\tSaving Image",
 
         result = Image.fromarray(result, mode="RGB")
-        result.save(fname)
+        result.save(filepath)
 
         print "Done."
 
-    def generation_filename(self):
+    def generate_filepath(self, extension):
+        results_directory = self.results_directory()
+
         root = os.path.basename(self.dst_name)
         padded_generation = str(self.current_generation).zfill(7)
-
-        return "{root}_gen_{padded_generation}".format(
+        file_name = "{root}_gen_{padded_generation}.{extension}".format(
             root=root,
             padded_generation=padded_generation,
+            extension=extension,
         )
+
+        return os.path.join(results_directory, file_name)
+
+    def results_directory(self):
+        directory = os.path.join(os.path.dirname(__file__), "results")
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        return directory
+
+    def snapshots_glob(self, pattern=None):
+        if pattern is None:
+            pattern = "*_gen_*"
+
+        glob.iglob(os.path.join(self.results_directory(), pattern))
 
     def json(self):
         return {
@@ -195,28 +217,15 @@ class Problem(object):
             "population_name" : self.population.__class__.__name__,
         }
 
-def create_images(glob_pattern=None, problem_cls=None, limited_range=None):
-    if glob_pattern is None:
-        glob_pattern = "*_gen_*"
-
-    if problem_cls is None:
-        problem_cls = Problem
-
-    for filepath in glob.glob(glob_pattern):
-        problem = problem_cls(snapshot_name=filepath)
-        if limited_range and problem.current_generation not in limited_range:
-            continue
-        problem.save_image()
-
 if __name__ == "__main__":
     problem = Problem(
-        image_name="target.png",
-        dst_name="target",
-        generations=20,
+        image_name="circles.png",
+        dst_name="circles",
+        generations=100,
     )
-    problem = Problem(
-        snapshot_name="target.png",
-        dst_name="target",
-        generations=20,
-    )
+    # problem = Problem(
+    #     snapshot_name="circles",
+    #     dst_name="circles",
+    #     generations=100,
+    # )
     problem.run()
