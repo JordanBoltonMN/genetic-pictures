@@ -9,9 +9,9 @@ class BasePopulation(object):
         mutation_rate=0.1, tournament_size=None, elite_count=None, pool=None,
         **kwargs):
         if tournament_size is None:
-            tournament_size = size * 0.1
+            tournament_size = int(size * 0.1)
         if elite_count is None:
-            elite_count = size * 0.01
+            elite_count = int(size * 0.01)
 
         self.problem = problem
 
@@ -70,6 +70,7 @@ class BasePopulation(object):
 
         # grab first 'elite_count' individuals
         n_elites = self.elite_count
+
         new_pool = self.pool[:n_elites]
 
         while len(new_pool) != len(self.pool):

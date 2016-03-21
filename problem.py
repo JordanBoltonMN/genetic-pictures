@@ -1,7 +1,10 @@
+import calendar
 import glob
 import hashlib
 import json
 import os
+import random
+import time
 
 import cv2
 import numpy as np
@@ -31,6 +34,9 @@ class Problem(object):
             raise Exception("never should reach here")
 
         init_kwargs.update(kwargs)
+
+        self.seed = init_kwargs["seed"]
+        random.seed(self.seed)
 
         self.current_generation = init_kwargs["current_generation"]
         self.generations = init_kwargs["generations"]
@@ -79,6 +85,7 @@ class Problem(object):
 
     def kwargs_from_image_name(self, image_name):
         return {
+            "seed" : calendar.timegm(time.gmtime()),
             "image_name" : image_name,
             "image" : cv2.imread(image_name),
             "image_md5" : md5(image_name),
@@ -86,14 +93,17 @@ class Problem(object):
 
     def kwargs_from_snapshot_name(self, snapshot_name):
         # was given a specific snapshot
-        if "_gen_" in snapshot_name and os.path.isfile(snapshot_name):
-            snapshot_fname = snapshot_name
+        results_directory = self.results_directory()
+
+        possible_filepath = os.path.join(results_directory, snapshot_name)
+        if os.path.isfile(possible_filepath):
+            snapshot_fname = possible_filepath
         else:
             # was given a generic name, find the latest generation snapshot
             snapshot_pattern = "{0}_gen_*.json".format(snapshot_name)
             glob_pattern = os.path.join(
-                self.results_directory(),
-                snapshot_pattern
+                results_directory,
+                snapshot_pattern,
             )
             similar = glob.glob(glob_pattern)
             # no snapshots exist for the given generic name
@@ -123,7 +133,6 @@ class Problem(object):
             raise ValueError(error)
 
         return result
-
 
     def create_population(self, **kwargs):
         # instantiate the population for the given name
@@ -204,10 +213,11 @@ class Problem(object):
         if pattern is None:
             pattern = "*_gen_*"
 
-        glob.iglob(os.path.join(self.results_directory(), pattern))
+        return glob.iglob(os.path.join(self.results_directory(), pattern))
 
     def json(self):
         return {
+            "seed" : self.seed,
             "image_name" : self.image_name,
             "dst_name" : self.dst_name,
             "image_md5" : self.image_md5,
@@ -217,16 +227,67 @@ class Problem(object):
             "population_name" : self.population.__class__.__name__,
         }
 
+
+def make_missing_images(problem):
+    def strip_gens(paths):
+        result = set()
+
+        for p in paths:
+            start = p.find("_gen_") + len("_gen_")
+            stop = p.rfind(".")
+            result.add(p[start:stop])
+
+        return result
+
+    json_pattern = problem.dst_name + "_gen_*.json"
+    json_gens = strip_gens(problem.snapshots_glob(json_pattern))
+
+    picture_pattern = problem.dst_name + "_gen_*.png"
+    picture_gens = strip_gens(problem.snapshots_glob(picture_pattern))
+
+    missing_picture_gens = json_gens - picture_gens
+    for gen in missing_picture_gens:
+        snapshot_name = "{0}_gen_{1}.json".format(
+            problem.dst_name,
+            gen
+        )
+        new_problem = Problem(snapshot_name=snapshot_name)
+        new_problem.save_image()
+
+
 if __name__ == "__main__":
     problem = Problem(
         image_name="circles.png",
-        dst_name="test",
-        generations=2,
+        dst_name="rgb",
+        generations=10,
+        size=10000,
         evaluator_name="RGBDifference",
     )
-    # problem = Problem(
-    #     snapshot_name="circles",
-    #     dst_name="circles",
-    #     generations=100,
-    # )
+    problem.run()
+
+    problem = Problem(
+        image_name="circles.png",
+        dst_name="clilab",
+        generations=10,
+        size=10000,
+        evaluator_name="CIELabDifference",
+    )
+    problem.run()
+
+    problem = Problem(
+        image_name="circles.png",
+        dst_name="rgb_weighted",
+        generations=10,
+        size=10000,
+        evaluator_name="WeightedRGBDifference",
+    )
+    problem.run()
+
+    problem = Problem(
+        image_name="circles.png",
+        dst_name="clilab_weighted",
+        generations=10,
+        size=10000,
+        evaluator_name="WeightedCIELabDifference",
+    )
     problem.run()
