@@ -220,8 +220,9 @@ class Problem(object):
 if __name__ == "__main__":
     problem = Problem(
         image_name="circles.png",
-        dst_name="circles",
-        generations=100,
+        dst_name="test",
+        generations=2,
+        evaluator_name="RGBDifference",
     )
     # problem = Problem(
     #     snapshot_name="circles",

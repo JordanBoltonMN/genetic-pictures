@@ -4,51 +4,44 @@ import evaluators
 import species
 
 class BasePopulation(object):
-    def __init__(self, problem, **kwargs):
-        init_kwargs = self.default_kwargs()
-        init_kwargs.update(kwargs)
+    def __init__(self, problem,
+        species_name="Ellipse", evaluator_name="RGBDifference", size=1000,
+        mutation_rate=0.1, tournament_size=None, elite_count=None, pool=None,
+        **kwargs):
+        if tournament_size is None:
+            tournament_size = size * 0.1
+        if elite_count is None:
+            elite_count = size * 0.01
+
         self.problem = problem
 
-        self.size = init_kwargs["size"]
-        self.tournament_size = init_kwargs["tournament_size"]
-        self.elite_count = init_kwargs["elite_count"]
-        self.mutation_rate = init_kwargs["mutation_rate"]
-
-        self.species_name = init_kwargs["species_name"]
-        if self.species_name not in species.name_to_obj:
-            error = "Unknown species_name '{0}'".format(self.species_name)
+        if species_name not in species.name_to_obj:
+            error = "Unknown species_name '{0}'".format(species_name)
             raise ValueError(error)
         else:
-            self.species_cls = species.name_to_obj[self.species_name]
+            self.species_name = species_name
+            self.species_cls = species.name_to_obj[species_name]
 
-        if "pool" not in init_kwargs:
+        if pool is None:
+            self.size = size
             self.pool = self.generate_pool()
         else:
-            self.pool = self.load_pool(init_kwargs["pool"])
-            self.size = len(self.pool)
+            self.size = len(pool)
+            self.pool = self.load_pool(pool)
 
-        self.evaluator_name = init_kwargs["evaluator_name"]
-        self.evaluator = self.create_evaluator(**init_kwargs)
+        self.tournament_size = tournament_size
+        self.elite_count = elite_count
+        self.mutation_rate = mutation_rate
 
-    def default_kwargs(self):
-        size = 1000
-        tournament_size = int(size * 0.1)
-        elite_count = int(size * 0.001)
+        self.evaluator_name = evaluator_name
+        self.evaluator = self.create_evaluator(**kwargs)
 
-        return {
-            "species_name" : "Ellipse",
-            "evaluator_name" : "WeightedRGBDifference",
-
-            "size" : size,
-            "tournament_size" : tournament_size,
-            "elite_count" : elite_count,
-            "mutation_rate" : 0.1,
-        }
-
-    def create_evaluator(self, **kwargs):
+    def create_evaluator(self, evaluator_name=None, **kwargs):
         # instantiate the evaluator for the given name
         # look in evaluators.py to see how name_to_obj is generated
-        evaluator_name = kwargs["evaluator_name"]
+        if evaluator_name is None:
+            evaluator_name = self.evaluator_name
+
         evaluator_kwargs = kwargs.get("evaluator", {})
 
         if evaluator_name not in evaluators.name_to_obj:
@@ -105,15 +98,14 @@ class BasePopulation(object):
 
     def json(self):
         return {
-            "species_name" : self.species_name,
-            "evaluator_name" : self.evaluator_name,
-
             "elite_count" : self.elite_count,
             "tournament_size" : self.tournament_size,
             "mutation_rate" : self.mutation_rate,
 
+            "species_name" : self.species_name,
             "pool" : [individual.json() for individual in self.pool],
 
+            "evaluator_name" : self.evaluator_name,
             "evaluator" : self.evaluator.json(),
         }
 
