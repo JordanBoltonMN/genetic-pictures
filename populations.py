@@ -36,6 +36,9 @@ class BasePopulation(object):
         self.evaluator_name = evaluator_name
         self.evaluator = self.create_evaluator(**kwargs)
 
+    def setup(self):
+        self.pool = self.update_fitness(self.pool)
+
     def create_evaluator(self, evaluator_name=None, **kwargs):
         # instantiate the evaluator for the given name
         # look in evaluators.py to see how name_to_obj is generated
@@ -60,13 +63,12 @@ class BasePopulation(object):
     def load_pool(self, pool):
         return [self.species_cls(self.problem, **d) for d in pool]
 
-    def update_fitness(self):
-        self.pool = self.evaluator(self.problem.image, self.pool)
-        self._sort_pool(self.pool)
+    def update_fitness(self, pool):
+        return self.evaluator(self.problem.image, pool)
 
     def breed(self):
         # sort by fitness for elite_count
-        self._sort_pool(self.pool)
+        self.evaluator.sort_pool(self.pool)
 
         # grab first 'elite_count' individuals
         n_elites = self.elite_count
@@ -85,13 +87,12 @@ class BasePopulation(object):
 
             new_pool.append(child)
 
-        self.pool = new_pool
-        self.update_fitness()
+        self.pool = self.update_fitness(new_pool)
 
     def tournament(self):
         size = self.tournament_size
         tourney = [random.choice(self.pool) for _ in range(size)]
-        self._sort_pool(tourney)
+        self.evaluator.sort_pool(tourney)
         return tourney[0]
 
     def should_mutate(self):

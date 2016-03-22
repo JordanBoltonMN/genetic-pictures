@@ -2,6 +2,7 @@ from math import sqrt
 
 import numpy as np
 
+
 def rgb_to_xyz(rgb):
     # Observer = 2nd degree, Illuminant = D65
     def helper(octal):
@@ -26,6 +27,7 @@ def rgb_to_xyz(rgb):
     z = (var_r * 0.0193) + (var_g * 0.1192) + (var_b * 0.9505)
 
     return (x, y, z)
+
 
 def xyz_to_cielab(xyz, reference=None):
     # Observer = 2nd degree, Illuminant = D65

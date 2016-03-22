@@ -52,13 +52,13 @@ class Problem(object):
     def run(self):
         if self.current_generation == 0:
             print "Performing setup for generation 0."
-            self.setup_problem()
+            self.setup()
 
         for _ in range(self.current_generation, self.generations):
             self.next_generation()
 
-    def setup_problem(self):
-        self.population.update_fitness()
+    def setup(self):
+        self.population.setup()
         self.save_snapshot()
         if self.should_save_image():
             self.save_image()
@@ -258,36 +258,9 @@ def make_missing_images(problem):
 if __name__ == "__main__":
     problem = Problem(
         image_name="circles.png",
-        dst_name="rgb",
-        generations=10,
-        size=10000,
-        evaluator_name="RGBDifference",
-    )
-    problem.run()
-
-    problem = Problem(
-        image_name="circles.png",
         dst_name="clilab",
         generations=10,
-        size=10000,
+        size=1000,
         evaluator_name="CIELabDifference",
-    )
-    problem.run()
-
-    problem = Problem(
-        image_name="circles.png",
-        dst_name="rgb_weighted",
-        generations=10,
-        size=10000,
-        evaluator_name="WeightedRGBDifference",
-    )
-    problem.run()
-
-    problem = Problem(
-        image_name="circles.png",
-        dst_name="clilab_weighted",
-        generations=10,
-        size=10000,
-        evaluator_name="WeightedCIELabDifference",
     )
     problem.run()

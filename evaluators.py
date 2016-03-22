@@ -12,7 +12,13 @@ class BaseEvaluator(object):
     def __call__(self, image, pool):
         raise NotImplementedError()
 
-    def _fitness_calculator(self, image, representation, **kwargs):
+    def sort_pool(self, pool):
+        pool.sort(
+            key=lambda individual: individual.fitness,
+            reverse=self.reverse_sort,
+        )
+
+    def individual_fitness(self, image, representation, **kwargs):
         raise NotImplementedError()
 
     def json(self):
@@ -34,7 +40,10 @@ class MultiprocessingEvaluator(BaseEvaluator):
         f = self._imap_function()
         packaged = self._imap_packager(image, pool)
         imap_iter = self._imap(f, packaged)
-        return self._imap_reconstructor(image, pool, imap_iter)
+        pool = self._imap_reconstructor(image, pool, imap_iter)
+
+        self.sort_pool(pool)
+        return pool
 
     def _imap_function(self):
         return sliced_fitness
@@ -72,7 +81,7 @@ class MultiprocessingEvaluator(BaseEvaluator):
         return pool
 
 class ColorDifference(MultiprocessingEvaluator):
-    def _fitness_calculator(self, image, representation, **kwargs):
+    def individual_fitness(self, image, representation, **kwargs):
         fitness = 0
         weight = kwargs.get("weight", None)
 
@@ -184,7 +193,7 @@ def sliced_fitness(d):
     evaluator = d["evaluator"]
     calculator_kwargs = d.get("calculator_kwargs", {})
 
-    fitness = evaluator._fitness_calculator(
+    fitness = evaluator.individual_fitness(
         image_slice,
         row_slice,
         **calculator_kwargs
