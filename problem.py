@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-import populations
+import worlds
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -47,7 +47,7 @@ class Problem(object):
         self.dst_name = init_kwargs.get("dst_name", self.image_name)
         self.height, self.width, _ = self.image.shape
 
-        self.population = self.create_population(**init_kwargs)
+        self.world = self.create_world(**init_kwargs)
 
     def run(self):
         if self.current_generation == 0:
@@ -58,7 +58,7 @@ class Problem(object):
             self.next_generation()
 
     def setup(self):
-        self.population.setup()
+        self.world.setup()
         self.save_snapshot()
         if self.should_save_image():
             self.save_image()
@@ -67,7 +67,7 @@ class Problem(object):
         self.current_generation += 1
         print "Starting generation: {0}".format(self.current_generation)
         print "\tBreeding.",
-        self.population.breed()
+        self.world.breed()
         print "Done"
 
         self.save_snapshot()
@@ -80,7 +80,7 @@ class Problem(object):
             "current_generation" : 0,
             "generations" : 10,
             "picture_every" : 1,
-            "population_name" : "BasePopulation",
+            "world_name" : "BaseWorld",
         }
 
     def kwargs_from_image_name(self, image_name):
@@ -120,7 +120,7 @@ class Problem(object):
         image_name = snapshot["problem"]["image_name"]
         result = self.kwargs_from_image_name(image_name)
         result.update(snapshot["problem"])
-        result.update(snapshot["population"])
+        result.update(snapshot["world"])
 
         # double check that the loaded snapshot is for the right image
         new_md5 = md5(image_name)
@@ -134,16 +134,16 @@ class Problem(object):
 
         return result
 
-    def create_population(self, **kwargs):
-        # instantiate the population for the given name
-        # look in populations.py to see how name_to_obj is generated
-        population_name = kwargs.get("population_name")
+    def create_world(self, **kwargs):
+        # instantiate the world for the given name
+        # look in worlds.py to see how name_to_obj is generated
+        world_name = kwargs.get("world_name")
 
-        if population_name not in populations.name_to_obj:
-            error = "Unknown population '{0}'".format(population_name)
+        if world_name not in worlds.name_to_obj:
+            error = "Unknown world '{0}'".format(world_name)
             raise ValueError(error)
         else:
-            return populations.name_to_obj[population_name](self, **kwargs)
+            return worlds.name_to_obj[world_name](self, **kwargs)
 
     def save_snapshot(self):
         filepath = self.generate_filepath("json")
@@ -153,7 +153,7 @@ class Problem(object):
         # used on a Problem's init
         d = {
             "problem" : self.json(),
-            "population" : self.population.json()
+            "world" : self.world.json()
         }
         print "Done."
 
@@ -175,12 +175,11 @@ class Problem(object):
         print "Creating image {0}:".format(filepath)
         print "\tGenerating Image.",
 
-        for individual in self.population.individuals():
+        for individual in self.world.individuals():
             # 3D numpy array, (y, x, RGB)
             representation = individual.create_representation()
             # blit pixels to screen
-            for (y, x) in np.argwhere(representation.any(axis=-1)):
-                result[y][x] = representation[y][x]
+            np.copyto(result, representation, where=representation>0)
 
         print "Done"
         print "\tSaving Image",
@@ -224,7 +223,7 @@ class Problem(object):
             "current_generation" : self.current_generation,
             "generations" : self.generations,
             "picture_every" : self.picture_every,
-            "population_name" : self.population.__class__.__name__,
+            "world_name" : self.world.__class__.__name__,
         }
 
 
@@ -257,10 +256,12 @@ def make_missing_images(problem):
 
 if __name__ == "__main__":
     problem = Problem(
-        image_name="circles.png",
-        dst_name="clilab",
-        generations=10,
-        size=1000,
-        evaluator_name="CIELabDifference",
+        image_name="gradient.png",
+        # snapshot_name="gradient",
+        dst_name="gradient",
+        generations=100,
+        size=100,
+        evaluator_name="RGBDifference",
+
     )
     problem.run()

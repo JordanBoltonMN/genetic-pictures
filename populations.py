@@ -1,122 +1,99 @@
 import random
 
-import evaluators
+import numpy as np
+
 import species
 
+
 class BasePopulation(object):
-    def __init__(self, problem,
-        species_name="Ellipse", evaluator_name="RGBDifference", size=1000,
-        mutation_rate=0.1, tournament_size=None, elite_count=None, pool=None,
-        **kwargs):
-        if tournament_size is None:
-            tournament_size = int(size * 0.1)
-        if elite_count is None:
-            elite_count = int(size * 0.01)
-
+    def __init__(self, problem, species_cls, individuals=None, size=100,
+                 **kwargs):
         self.problem = problem
+        self.species_cls = species_cls
 
-        if species_name not in species.name_to_obj:
-            error = "Unknown species_name '{0}'".format(species_name)
-            raise ValueError(error)
+        if individuals is None:
+            self.individuals = self.create_individuals(size)
         else:
-            self.species_name = species_name
-            self.species_cls = species.name_to_obj[species_name]
+            self.individuals = self.load_individuals(individuals)
 
-        if pool is None:
-            self.size = size
-            self.pool = self.generate_pool()
-        else:
-            self.size = len(pool)
-            self.pool = self.load_pool(pool)
+    def __iter__(self):
+        return iter(self.individuals)
 
-        self.tournament_size = tournament_size
-        self.elite_count = elite_count
-        self.mutation_rate = mutation_rate
+    def __len__(self):
+        return len(self.individuals)
 
-        self.evaluator_name = evaluator_name
-        self.evaluator = self.create_evaluator(**kwargs)
+    def __getitem__(self, index):
+        return self.individuals[index]
 
-    def setup(self):
-        self.pool = self.update_fitness(self.pool)
+    def __setitem__(self, index, value):
+        self.individuals[index] = value
 
-    def create_evaluator(self, evaluator_name=None, **kwargs):
-        # instantiate the evaluator for the given name
-        # look in evaluators.py to see how name_to_obj is generated
-        if evaluator_name is None:
-            evaluator_name = self.evaluator_name
+    @property
+    def fitness(self):
+        return sum([individual.fitness for individual in self])
 
-        evaluator_kwargs = kwargs.get("evaluator", {})
+    def create_individuals(self, size):
+        individuals = []
+        for i in range(size):
+            individuals.append(self.species_cls(self.problem))
+        return individuals
 
-        if evaluator_name not in evaluators.name_to_obj:
-            error = "Unknown evaluator '{0}'".format(evaluator_name)
-            raise ValueError(error)
-        else:
-            evaluator_cls = evaluators.name_to_obj[evaluator_name]
-            return evaluator_cls(**evaluator_kwargs)
+    def load_individuals(self, individuals):
+        return [self.species_cls(self.problem, **d) for d in individuals]
 
-    def individuals(self):
-        return self.pool
+    def new_population(self, individuals):
+        return self.__class__(self.problem, individuals=individuals)
 
-    def generate_pool(self):
-        return [self.species_cls(self.problem) for _ in range(self.size)]
+    def breed_with(self, other):
+        assert len(self) == len(other)
 
-    def load_pool(self, pool):
-        return [self.species_cls(self.problem, **d) for d in pool]
+        children = []
+        pool1 = list(self)
+        pool2 = list(other)
+        random.shuffle(pool1)
+        random.shuffle(pool2)
 
-    def update_fitness(self, pool):
-        return self.evaluator(self.problem.image, pool)
+        for i, individual1 in enumerate(pool1):
+            individual2 = pool2[i]
+            children.append(individual1.breed_with(individual2))
 
-    def breed(self):
-        # sort by fitness for elite_count
-        self.evaluator.sort_pool(self.pool)
+        json_children = [child.json() for child in children]
+        return self.new_population(json_children)
 
-        # grab first 'elite_count' individuals
-        n_elites = self.elite_count
+    def mutate(self, mutation_rate):
+        for individual in self:
+            if random.random() < mutation_rate:
+                individual.mutate()
 
-        new_pool = self.pool[:n_elites]
+    def create_representation(self):
+        mask = np.zeros_like(self.problem.image)
+        for individual in self:
+            representation = individual.create_representation()
+            np.copyto(mask, representation, where=representation>0)
 
-        while len(new_pool) != len(self.pool):
-            i1 = self.tournament()
-            i2 = self.tournament()
-            while i1 is i2:
-                i2 = self.tournament()
-
-            child = i1.breed_with(i2)
-            if self.should_mutate():
-                child.mutate()
-
-            new_pool.append(child)
-
-        self.pool = self.update_fitness(new_pool)
-
-    def tournament(self):
-        size = self.tournament_size
-        tourney = [random.choice(self.pool) for _ in range(size)]
-        self.evaluator.sort_pool(tourney)
-        return tourney[0]
-
-    def should_mutate(self):
-        return random.random() <= self.mutation_rate
+        return mask
 
     def json(self):
         return {
-            "elite_count" : self.elite_count,
-            "tournament_size" : self.tournament_size,
-            "mutation_rate" : self.mutation_rate,
-
-            "species_name" : self.species_name,
-            "pool" : [individual.json() for individual in self.pool],
-
-            "evaluator_name" : self.evaluator_name,
-            "evaluator" : self.evaluator.json(),
+            "individuals" : [individual.json() for individual in self],
         }
 
-    def _sort_pool(self, pool):
-        pool.sort(
-            key=lambda individual: individual.fitness,
-            reverse=self.evaluator.reverse_sort,
+
+class EllipsePopulation(BasePopulation):
+    def __init__(self, problem, **kwargs):
+        super(EllipsePopulation, self).__init__(
+            problem,
+            species.Ellipse,
+            **kwargs
         )
 
-name_to_obj = {BasePopulation.__name__ : BasePopulation}
-for cls in BasePopulation.__subclasses__():
-    name_to_obj[cls.__name__] = cls
+
+name_to_obj = {}
+to_check = [BasePopulation]
+while to_check:
+    cls = to_check.pop()
+    for sub_cls in cls.__subclasses__():
+        name = sub_cls.__name__
+        if name not in name_to_obj:
+            name_to_obj[name] = sub_cls
+            to_check.append(sub_cls)

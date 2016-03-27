@@ -1,4 +1,5 @@
-from math import sqrt
+from math import ceil, sqrt
+import random
 
 import numpy as np
 
@@ -97,3 +98,36 @@ def distance(coord1, coord2):
     arr1 = np.array(coord1)
     arr2 = np.array(coord2)
     return np.linalg.norm(arr1 - arr2)
+
+
+def uint_bits(i, num_bytes=1):
+    return '{i:0{bits}b}'.format(i=i, bits=num_bytes * 8)
+
+
+def uint_from_bits(s):
+    return int(s, 2)
+
+
+def uint_tuple_from_bits(s, bytes_per):
+    bits_per = bytes_per * 8
+    assert len(s) % bits_per == 0
+
+    result = []
+    for index in range(0, len(s), bits_per):
+        bits = s[index:index + bits_per]
+        result.append(uint_from_bits(bits))
+    return tuple(result)
+
+
+def crossover_bits(s1, s2, probability=0.8):
+    assert len(s1) == len(s2)
+
+    index = int(ceil(len(s1) * random.uniform(0.0, probability)))
+    return s1[:index] + s2[index:]
+
+
+def crossover_uint_iterables(it1, it2, bytes_per, probability=0.8):
+    s1 = "".join([uint_bits(i, num_bytes=bytes_per) for i in it1])
+    s2 = "".join([uint_bits(i, num_bytes=bytes_per) for i in it2])
+    s3 = crossover_bits(s1, s2, probability)
+    return uint_tuple_from_bits(s3, bytes_per)
