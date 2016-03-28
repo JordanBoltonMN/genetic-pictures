@@ -23,10 +23,12 @@ def offset_iterable(iterable, low, high, minimum=None, maximum=None):
 
     return tuple(l)
 
+
 def random_position(problem):
     width = problem.width
     height = problem.height
     return (random.randint(0, width - 1), random.randint(0, height - 1))
+
 
 def random_color():
     return (
@@ -35,8 +37,10 @@ def random_color():
         random.randint(0, 255),
     )
 
+
 def offset_color(color, low=-10, high=10):
     return offset_iterable(color, low, high, 0, 255)
+
 
 class BaseIndividual(object):
     SIZE_RATIO_MIN = 0.005
@@ -61,7 +65,7 @@ class BaseIndividual(object):
 
 class Ellipse(BaseIndividual):
     def __init__(self, problem, center=None, axes=None, angle=None, color=None,
-        startAngle=0, endAngle=360, thickness=-1, **kwargs):
+                 startAngle=0, endAngle=360, thickness=-1, **kwargs):
         super(Ellipse, self).__init__(problem, **kwargs)
 
         if center is None:
@@ -144,7 +148,6 @@ class Ellipse(BaseIndividual):
         )
 
     def mutate(self):
-        return
         mutation_type = random.randint(1, 3)
 
         # center
@@ -160,10 +163,10 @@ class Ellipse(BaseIndividual):
             raise ValueError("should never reach here")
 
     def offset_center(self, low=-10, high=10):
-        return self.offset_iterable(self.center, low, high)
+        return offset_iterable(self.center, low, high)
 
     def offset_axes(self, low=-10, high=10):
-        return self.offset_iterable(self.axes, low, high, minimum=5)
+        return offset_iterable(self.axes, low, high, minimum=5)
 
     def _random_axes(self, problem):
         width = problem.width

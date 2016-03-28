@@ -25,7 +25,7 @@ class BaseEvaluator(object):
         return {"reverse_sort" : self.reverse_sort}
 
 class MultiprocessingEvaluator(BaseEvaluator):
-    def __init__(self, processes=3, chunksize=8, rows_per_iter=32, **kwargs):
+    def __init__(self, processes=3, chunksize=16, rows_per_iter=128, **kwargs):
         super(MultiprocessingEvaluator, self).__init__(**kwargs)
         self.processes = processes
         self.chunksize = chunksize
@@ -50,7 +50,7 @@ class MultiprocessingEvaluator(BaseEvaluator):
         return result
 
     def _imap_function(self):
-        return sliced_fitness
+        return sliced_image_fitness
 
     def _imap_packager(self, image, inhabitants):
         return sliced_image_generator(
@@ -80,9 +80,11 @@ class MultiprocessingEvaluator(BaseEvaluator):
                 calculated_fitness[key] = 0
 
             calculated_fitness[key] += fitness
+            print "added to " + str(key)
 
         items = calculated_fitness.items()
         for ((collection_i, individual_i), summed_fitness) in items:
+            print "summed" + str((collection_i, individual_i))
             inhabitants[collection_i][individual_i].fitness = summed_fitness
 
         return inhabitants
@@ -108,6 +110,7 @@ class ColorDifference(MultiprocessingEvaluator):
 
     def rgb_fitness(self, rgb1, rgb2):
         raise NotImplementedError()
+
 
 class RGBDifference(ColorDifference):
     def rgb_fitness(self, rgb1, rgb2):
@@ -204,11 +207,10 @@ def sliced_image_generator(image, inhabitants, evaluator, rows_per_iter,
 
                     row_index += rows_per_iter
 
-
     return generator()
 
 
-def sliced_fitness(d):
+def sliced_image_fitness(d):
     collection_index = d["collection_index"]
     individual_index = d["individual_index"]
 

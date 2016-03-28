@@ -69,7 +69,7 @@ class BasePopulation(object):
         mask = np.zeros_like(self.problem.image)
         for individual in self:
             representation = individual.create_representation()
-            np.copyto(mask, representation, where=representation>0)
+            np.copyto(mask, representation, where=representation > 0)
 
         return mask
 

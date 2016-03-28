@@ -39,7 +39,7 @@ def xyz_to_cielab(xyz, reference=None):
         octal /= reference
 
         if octal > 0.0085856:
-            octal = octal ** (1/3)
+            octal **= (1 / 3)
         else:
             octal = (octal * 7.787) + (16 / 116)
 

@@ -12,6 +12,7 @@ from PIL import Image
 
 import worlds
 
+
 def md5(fname):
     hash_md5 = hashlib.md5()
     with open(fname, "rb") as f:
@@ -80,7 +81,7 @@ class Problem(object):
             "current_generation" : 0,
             "generations" : 10,
             "picture_every" : 1,
-            "world_name" : "BaseWorld",
+            "world_name" : "TournamentWorld",
         }
 
     def kwargs_from_image_name(self, image_name):
@@ -175,11 +176,11 @@ class Problem(object):
         print "Creating image {0}:".format(filepath)
         print "\tGenerating Image.",
 
-        for individual in self.world.individuals():
+        for population in self.world.inhabitants:
             # 3D numpy array, (y, x, RGB)
-            representation = individual.create_representation()
+            representation = population.create_representation()
             # blit pixels to screen
-            np.copyto(result, representation, where=representation>0)
+            np.copyto(result, representation, where=representation > 0)
 
         print "Done"
         print "\tSaving Image",
@@ -258,9 +259,9 @@ if __name__ == "__main__":
     problem = Problem(
         image_name="gradient.png",
         # snapshot_name="gradient",
-        dst_name="gradient",
-        generations=100,
-        size=100,
+        dst_name="gradient2",
+        generations=2,
+        size=2,
         evaluator_name="RGBDifference",
 
     )
