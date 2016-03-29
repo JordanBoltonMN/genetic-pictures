@@ -24,10 +24,17 @@ def offset_iterable(iterable, low, high, minimum=None, maximum=None):
     return tuple(l)
 
 
-def random_position(problem):
-    width = problem.width
-    height = problem.height
-    return (random.randint(0, width - 1), random.randint(0, height - 1))
+def random_x_position(width):
+    return random.randint(0, width - 1)
+
+
+def random_y_position(height):
+    return random.randint(0, height - 1)
+
+
+def random_position(image_dimensions):
+    (width, height) = image_dimensions
+    return (random_x_position(width), random_y_position(height))
 
 
 def random_color():
@@ -43,142 +50,111 @@ def offset_color(color, low=-10, high=10):
 
 
 class BaseIndividual(object):
-    SIZE_RATIO_MIN = 0.005
-    SIZE_RATIO_MAX = 0.01
+    def __init__(self, problem, fitness=None):
+        (height, width, _) = problem.image.shape
 
-    def __init__(self, problem, fitness=None, **kwargs):
+        self.image_dimensions = (height, width)
+        self.image_dtype = problem.image.dtype
         self.problem = problem
         self.fitness = fitness
 
-    def create_representation(self):
+    def create_representation(self, alpha=None):
         raise NotImplementedError()
 
     def mutate(self):
-        raise NotImplementedError()
-
-    def breed_with(self, other):
         raise NotImplementedError()
 
     def json(self):
         return {"fitness" : self.fitness}
 
 
-class Ellipse(BaseIndividual):
-    def __init__(self, problem, center=None, axes=None, angle=None, color=None,
-                 startAngle=0, endAngle=360, thickness=-1, **kwargs):
-        super(Ellipse, self).__init__(problem, **kwargs)
+class Polygon(BaseIndividual):
+    def __init__(self, problem, num_points, points=None, color=None, alpha=200,
+                 **kwargs):
+        super(Polygon, self).__init__(problem, **kwargs)
 
-        if center is None:
-            center = random_position(problem)
+        if points is None:
+            points = []
+            for _ in range(num_points):
+                points.append(random_position(self.image_dimensions))
+            # points = [random_position(problem) for _ in range(num_points)]
+            points = np.array(points, dtype=np.int32)
+            points = points.reshape(-1, 1, 2)
         else:
-            center = tuple(center)
-
-        if axes is None:
-            axes = self._random_axes(problem)
-        else:
-            axes = tuple(axes)
-
-        if angle is None:
-            angle = random.randint(0, 360)
+            assert len(points) == num_points
+            points = np.array(points)
 
         if color is None:
             color = random_color()
-        else:
-            color = tuple(color)
 
-        self.center = center
-        self.axes = axes
-        self.angle = angle
-        self.color = color
-        self.startAngle = startAngle
-        self.endAngle = endAngle
-        self.thickness = thickness
+        self.num_points = num_points
+        self.points = points
+        self.color = random_color()
+        self.alpha = alpha
+
+    def create_representation(self, alpha=None):
+        (height, width) = self.image_dimensions
+        dtype = self.image_dtype
+
+        representation = np.full((height, width, 3), 0, dtype=dtype)
+        cv2.fillPoly(representation, [self.points], self.color)
+
+        if alpha is None:
+            return representation
+
+        alpha_mask = np.full((height, width, 1), 0, dtype=dtype)
+        alpha_mask[np.any(representation, axis=-1)] = alpha
+        return np.dstack((representation, alpha_mask))
 
     def json(self):
-        d = super(Ellipse, self).json()
-        cls_d = {
-            "center" : self.center,
-            "axes" : self.axes,
-            "angle" : self.angle,
-            "color" : self.color,
-            "startAngle" : self.startAngle,
-            "endAngle" : self.endAngle,
-            "thickness" : self.thickness,
-        }
-        d.update(cls_d)
+        d = super(Polygon, self).json()
+        d.update(
+            num_points=self.num_points,
+            points=self.points.tolist(),
+            color=self.color,
+            alpha=self.alpha,
+        )
         return d
 
-    def create_representation(self):
-        mask = np.zeros_like(self.problem.image)
-        d = {
-            "center" : self.center,
-            "axes" : self.axes,
-            "angle" : self.angle,
-            "color" : self.color,
-            "startAngle" : self.startAngle,
-            "endAngle" : self.endAngle,
-            "thickness" : self.thickness,
-        }
-
-        cv2.ellipse(mask, **d)
-        return mask
-
-    def breed_with(self, other):
-        color = converters.crossover_uint_iterables(
-            self.color,
-            other.color,
-            1,
-        )
-        center = converters.crossover_uint_iterables(
-            self.center,
-            other.center,
-            2,
-        )
-        axes = converters.crossover_uint_iterables(
-            self.axes,
-            other.axes,
-            2,
-        )
-
-        return self.__class__(
-            self.problem,
-            color=color,
-            center=center,
-            axes=axes,
-        )
-
     def mutate(self):
-        mutation_type = random.randint(1, 3)
+        base = self.json()
 
-        # center
-        if mutation_type == 1:
-            self.center = self.offset_center()
-        # size / axes
-        elif mutation_type == 2:
-            self.axes = self.offset_axes()
-        # color
-        elif mutation_type == 3:
-            self.color = offset_color(self.color)
+        mutation_type = random.randint(0, 1)
+        if mutation_type is 0:
+            return self._mutate_point()
+        elif mutation_type is 1:
+            return self._mutate_color()
         else:
             raise ValueError("should never reach here")
 
-    def offset_center(self, low=-10, high=10):
-        return offset_iterable(self.center, low, high)
+    def _mutate_point(self):
+        kwargs = self.json()
+        points = kwargs["points"]
+        point_index = random.randint(0, self.num_points - 1)
+        (height, width) = self.image_dimensions
 
-    def offset_axes(self, low=-10, high=10):
-        return offset_iterable(self.axes, low, high, minimum=5)
+        # [True, False] == [y coordinate, x_coordinate]
+        if random.choice([True, False]):
+            points[point_index][0][0] = random_y_position(height)
+        else:
+            points[point_index][0][1] = random_x_position(width)
 
-    def _random_axes(self, problem):
-        width = problem.width
-        height = problem.height
+        return kwargs
 
-        x_min = int(width * self.SIZE_RATIO_MIN)
-        x_max = int(width * self.SIZE_RATIO_MAX)
+    def _mutate_color(self):
+        kwargs = self.json()
 
-        y_min = int(height * self.SIZE_RATIO_MIN)
-        y_max = int(height * self.SIZE_RATIO_MAX)
+        color = list(kwargs["color"])
+        color[random.randint(0, 2)] = random.randint(0, 255)
+        kwargs["color"] = tuple(color)
 
-        return (random.randint(x_min, x_max), random.randint(y_min, y_max))
+        return kwargs
+
+
+class Triangle(Polygon):
+    def __init__(self, problem, **kwargs):
+        kwargs["num_points"] = 3
+        super(Triangle, self).__init__(problem, **kwargs)
 
 
 name_to_obj = {}

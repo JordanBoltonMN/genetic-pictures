@@ -67,12 +67,9 @@ class Problem(object):
     def next_generation(self):
         self.current_generation += 1
         print "Starting generation: {0}".format(self.current_generation)
-        print "\tBreeding.",
-        self.world.breed()
-        print "Done"
 
+        self.world.next_generation()
         self.save_snapshot()
-
         if self.should_save_image():
             self.save_image()
 
@@ -81,7 +78,7 @@ class Problem(object):
             "current_generation" : 0,
             "generations" : 10,
             "picture_every" : 1,
-            "world_name" : "TournamentWorld",
+            "world_name" : "TriangleWorld",
         }
 
     def kwargs_from_image_name(self, image_name):
@@ -174,20 +171,13 @@ class Problem(object):
         result = np.zeros_like(self.image)
 
         print "Creating image {0}:".format(filepath)
-        print "\tGenerating Image.",
 
-        for population in self.world.inhabitants:
-            # 3D numpy array, (y, x, RGB)
-            representation = population.create_representation()
-            # blit pixels to screen
-            np.copyto(result, representation, where=representation > 0)
-
+        print "\tGetting Image.",
+        world = self.world.create_representation()
         print "Done"
+
         print "\tSaving Image",
-
-        result = Image.fromarray(result, mode="RGB")
-        result.save(filepath)
-
+        world.save(filepath)
         print "Done."
 
     def generate_filepath(self, extension):
@@ -227,7 +217,6 @@ class Problem(object):
             "world_name" : self.world.__class__.__name__,
         }
 
-
 def make_missing_images(problem):
     def strip_gens(paths):
         result = set()
@@ -257,12 +246,13 @@ def make_missing_images(problem):
 
 if __name__ == "__main__":
     problem = Problem(
-        image_name="gradient.png",
+        image_name="checkerboard.png",
         # snapshot_name="gradient",
-        dst_name="gradient2",
+        dst_name="checkerboard",
         generations=2,
-        size=2,
-        evaluator_name="RGBDifference",
-
+        size=128,
     )
     problem.run()
+
+    # image = problem.world.create_representation()
+    # image.save("debug.png")
