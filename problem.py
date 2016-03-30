@@ -246,10 +246,10 @@ def make_missing_images(problem):
 
 if __name__ == "__main__":
     problem = Problem(
-        image_name="checkerboard.png",
+        image_name="butters.png",
         # snapshot_name="gradient",
-        dst_name="checkerboard",
-        generations=2,
+        dst_name="butters",
+        generations=10000,
         size=128,
     )
     problem.run()

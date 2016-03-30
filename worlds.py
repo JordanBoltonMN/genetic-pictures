@@ -31,9 +31,7 @@ class BaseWorld(object):
             self.inhabitants = self.generate_inhabitants(size)
         else:
             self.inhabitants = self.load_inhabitants(inhabitants)
-            print "Updating fitness on initialization.",
             self.update_fitness()
-            print "Done."
 
     @property
     def representation(self):
@@ -58,7 +56,7 @@ class BaseWorld(object):
 
     def create_representation(self):
         image = self.problem.image
-        (width, height, _) = image.shape
+        (height, width, _) = image.shape
         image_dimensions = (height, width)
 
         base = np.full((height, width, 4), 0, dtype=image.dtype)
@@ -96,37 +94,82 @@ class BaseWorld(object):
         }
 
 class IterativeWorld(BaseWorld):
+    # def _next_generation(self):
+    #     print "\tMutating individuals.",
+    #     mutated_json = self._mutate_inhabitants()
+    #     print "Done."
+
+    #     print "\tCreating new world.",
+    #     potential_world = self._potential_world(mutated_json)
+    #     print "Done."
+
+    #     if self._representation is None:
+    #         print "\tUpdating representation for current world.",
+    #         self.create_representation()
+    #         print "Done."
+
+
+    #     print "\tCalculating fitness for new world.",
+    #     potential_world.update_fitness()
+    #     print "Done."
+
+    #     print "Is {current} > {new}? {result}".format(
+    #         current=self.fitness,
+    #         new=potential_world.fitness,
+    #         result=self.fitness > potential_world.fitness,
+    #     )
+    #     if self.fitness > potential_world.fitness:
+    #         print "\tUpdating world."
+    #         self.inhabitants = potential_world.inhabitants
+    #         self.fitness = potential_world.fitness
+    #         print "Done."
+    #     else:
+    #         print "\tWorld remains unchanged."
+
     def _next_generation(self):
-        print "\tMutating individuals.",
-        mutated_json = self._mutate_inhabitants()
-        print "Done."
+        inhabitants = [individual.json() for individual in self.inhabitants]
+        mutant_index = random.randint(0, len(inhabitants) - 1)
+        inhabitants[mutant_index] = self.inhabitants[mutant_index].mutate()
 
-        print "\tCreating new world.",
-        potential_world = self._potential_world(mutated_json)
-        print "Done."
+        test_world = self.__class__(self.problem, inhabitants=inhabitants)
+        test_world.update_fitness()
 
-        if self._representation is None:
-            print "\tUpdating representation for current world.",
-            self.create_representation()
-            print "Done."
+        print self.fitness, test_world.fitness, self.fitness > test_world.fitness
 
-
-        print "\tCalculating fitness for new world.",
-        potential_world.update_fitness()
-        print "Done."
-
-        print "Is {current} > {new}? {result}".format(
-            current=self.fitness,
-            new=potential_world.fitness,
-            result=self.fitness > potential_world.fitness,
-        )
-        if self.fitness > potential_world.fitness:
-            print "\tUpdating world."
-            self.inhabitants = potential_world.inhabitants
-            self.fitness = potential_world.fitness
-            print "Done."
+        # a lower fitness means less different
+        if self.fitness > test_world.fitness:
+            self.inhabitants = test_world.inhabitants
+            self.fitness = test_world.fitness
+            print "better"
         else:
-            print "\tWorld remains unchanged."
+            print "worse"
+
+        # print "\tCreating new world.",
+        # potential_world = self._potential_world(mutated_json)
+        # print "Done."
+
+        # if self._representation is None:
+        #     print "\tUpdating representation for current world.",
+        #     self.create_representation()
+        #     print "Done."
+
+
+        # print "\tCalculating fitness for new world.",
+        # potential_world.update_fitness()
+        # print "Done."
+
+        # print "Is {current} > {new}? {result}".format(
+        #     current=self.fitness,
+        #     new=potential_world.fitness,
+        #     result=self.fitness > potential_world.fitness,
+        # )
+        # if self.fitness > potential_world.fitness:
+        #     print "\tUpdating world."
+        #     self.inhabitants = potential_world.inhabitants
+        #     self.fitness = potential_world.fitness
+        #     print "Done."
+        # else:
+        #     print "\tWorld remains unchanged."
 
     def _mutate_inhabitants(self):
         return [i.mutate() for i in self.inhabitants]

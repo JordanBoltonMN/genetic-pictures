@@ -86,6 +86,42 @@ class MPWorldFitness(MultiprocessingBase):
         return sum(imap_iter)
 
 
+class MPWorldFitness2(MultiprocessingBase):
+    def __init__(self, image_dimensions, inhabitants, rows_per_iter=16,
+                 **kwargs):
+        super(MPWorldFitness2, self).__init__(**kwargs)
+        self.image_dimensions = image_dimensions
+        self.inhabitants = inhabitants
+        self.rows_per_iter = rows_per_iter
+
+    def _imap_packager(self, package):
+        (target, inhabitants) = package
+
+        for i, individual in enumerate(inhabitants):
+            representation individual.create_representation()
+            gen1 = image_slicing_generator2(target, self.rows_per_iter)
+            gen2 = image_slicing_generator2(representation, self.rows_per_iter)
+            for (target_slice, representation_slice) izip(gen1, gen2):
+                yield (target_slice, representation_slice, individual_index)
+
+    def _imap_function(self):
+        return image_comparison_rgb2
+
+    def _imap_reconstructor(self, imap_iter):
+        tally = {}
+        for (index, partial_sum) in imap_iter:
+            if index not in tally:
+                tally[index] = 0
+            tally += partial_sum
+
+        (height, width) = self.image_dimensions
+        factor = (height * width) * 3 # one for each in RGB
+        for (index, full_sum) in tally.items():
+            tally[index] = 1 - (full_sum / factor)
+
+        return tally
+
+
 def generator(iterable):
     for i in iterable:
         yield i
@@ -104,10 +140,28 @@ def image_slicing_generator(image, rows_per_iter):
         row_index += rows_per_iter
 
 
+def image_slicing_generator2(image, rows_per_iter):
+    (height, width, _) = image.shape
+    row_index = 0
+
+    while row_index < height:
+        start = row_index
+        stop = start + rows_per_iter
+
+        yield image[start:stop]
+
+        row_index += rows_per_iter
+
+
 def image_comparison_rgb((slice1, slice2)):
     diff = np.subtract(slice1, slice2)
     abs_diff = np.absolute(diff)
     return np.sum(abs_diff)
+
+
+def image_comparison_rgb2((slice1, slice2, index)):
+    overlap = np.bitwise_and(slice1, slice2)
+    return (index, np.sum(overlap))
 
 
 def create_alpha_representation(individual):
