@@ -1,8 +1,14 @@
+from __future__ import division
+
+import math
 from multiprocessing import Pool
 from itertools import izip
 
 import numpy as np
 from PIL import Image
+
+import converters
+
 
 class MultiprocessingBase(object):
     def __init__(self, processes=3, chunksize=16, rows_per_iter=128):
@@ -11,25 +17,25 @@ class MultiprocessingBase(object):
         self.rows_per_iter = rows_per_iter
 
     def __call__(self, package):
-        packaged = self._imap_packager(package)
-        f = self._imap_function()
-        imap_iter = self._imap(f, packaged)
-        return self._imap_reconstructor(imap_iter)
+        f = self.mapping_function()
+        packaged = self.packager(package)
+        imap_iter = self.map(f, packaged)
+        return self.reduce(imap_iter)
 
     def json(self):
         return {
-            "processes" : "self.processes",
-            "chunksize" : "self.chunksize",
-            "rows_per_iter" : "self.rows_per_iter",
+            "processes" : self.processes,
+            "chunksize" : self.chunksize,
+            "rows_per_iter" : self.rows_per_iter,
         }
 
-    def _imap_packager(self, package):
-        return iter(package)
+    def packager(self, package):
+        return (i for i in package)
 
-    def _imap_function(self):
+    def mapping_function(self):
         raise NotImplementedError()
 
-    def _imap(self, f, packaged):
+    def map(self, f, packaged):
         processes = Pool(processes=self.processes)
         imap_iter = processes.imap(
             f,
@@ -40,129 +46,68 @@ class MultiprocessingBase(object):
         processes.close()
         return imap_iter
 
-    def _imap_reconstructor(self, imap_iter):
+    def reduce(self, imap_iter):
         return (i for i in imap_iter)
 
 
-class MPWorldRepresentation(MultiprocessingBase):
-    def __init__(self, image_dimensions, **kwargs):
-        super(MPWorldRepresentation, self).__init__(**kwargs)
-
-        (height, width) = image_dimensions
-        base = np.full((height, width, 4), 0, dtype=np.uint8)
-        self.base = Image.fromarray(base)
-
-    def _imap_packager(self, package):
-        return generator(package)
-
-    def _imap_function(self):
-        return create_alpha_representation
-
-    def _imap_reconstructor(self, imap_iter):
-        base = self.base
-
-        for np_individual_representation in imap_iter:
-            rep = Image.fromarray(np_individual_representation)
-            base.paste(rep, (0, 0), rep)
-
-        return base
-
-
-class MPWorldFitness(MultiprocessingBase):
-    def __init__(self, rows_per_iter=16, **kwargs):
-        super(MPWorldFitness, self).__init__(**kwargs)
+class MPIndividualFitness(MultiprocessingBase):
+    def __init__(self, target_np, rows_per_iter=64, **kwargs):
+        super(MPIndividualFitness, self).__init__(**kwargs)
+        self.target_np = target_np
+        (height, width, _) = target_np.shape
+        self.target_dimensions = (height, width)
         self.rows_per_iter = rows_per_iter
 
-    def _imap_packager(self, package):
-        (target, representation) = package
-        gen1 = image_slicing_generator(target, self.rows_per_iter)
-        gen2 = image_slicing_generator(representation, self.rows_per_iter)
-        return izip(gen1, gen2)
+    def packager(self, package):
+        self.inhabitants = package
 
-    def _imap_function(self):
-        return image_comparison_rgb
+        for i, individual in enumerate(self.inhabitants):
+            representation = individual.representation()
+            gen1 = np_slicing_generator(self.target_np, self.rows_per_iter)
+            gen2 = np_slicing_generator(representation, self.rows_per_iter)
+            for (target_slice, representation_slice) in izip(gen1, gen2):
+                yield (target_slice, representation_slice, i)
 
-    def _imap_reconstructor(self, imap_iter):
-        return sum(imap_iter)
+    def mapping_function(self):
+        return image_comparison_rgba2
 
-
-class MPWorldFitness2(MultiprocessingBase):
-    def __init__(self, image_dimensions, inhabitants, rows_per_iter=16,
-                 **kwargs):
-        super(MPWorldFitness2, self).__init__(**kwargs)
-        self.image_dimensions = image_dimensions
-        self.inhabitants = inhabitants
-        self.rows_per_iter = rows_per_iter
-
-    def _imap_packager(self, package):
-        (target, inhabitants) = package
-
-        for i, individual in enumerate(inhabitants):
-            representation individual.create_representation()
-            gen1 = image_slicing_generator2(target, self.rows_per_iter)
-            gen2 = image_slicing_generator2(representation, self.rows_per_iter)
-            for (target_slice, representation_slice) izip(gen1, gen2):
-                yield (target_slice, representation_slice, individual_index)
-
-    def _imap_function(self):
-        return image_comparison_rgb2
-
-    def _imap_reconstructor(self, imap_iter):
+    def reduce(self, imap_iter):
         tally = {}
-        for (index, partial_sum) in imap_iter:
+        for (index, partial_difference) in imap_iter:
             if index not in tally:
                 tally[index] = 0
-            tally += partial_sum
 
-        (height, width) = self.image_dimensions
-        factor = (height * width) * 3 # one for each in RGB
-        for (index, full_sum) in tally.items():
-            tally[index] = 1 - (full_sum / factor)
+            tally[index] += partial_difference
 
-        return tally
+        for (index, difference) in tally.items():
+            self.inhabitants[index].fitness = difference
 
 
-def generator(iterable):
-    for i in iterable:
-        yield i
-
-
-def image_slicing_generator(image, rows_per_iter):
-    (height, width, _) = image.shape
+def np_slicing_generator(np_array, rows_per_iter):
+    (height, width, _) = np_array.shape
     row_index = 0
 
     while row_index < height:
         start = row_index
         stop = start + rows_per_iter
 
-        yield image[start:stop].flatten()
+        yield np_array[start:stop]
 
         row_index += rows_per_iter
 
 
-def image_slicing_generator2(image, rows_per_iter):
-    (height, width, _) = image.shape
-    row_index = 0
+def image_comparison_rgba((slice1, slice2, index)):
+    slice1 = slice.astype(dtype=np.int16)
+    slice2 = slice.astype(dtype=np.int16)
 
-    while row_index < height:
-        start = row_index
-        stop = start + rows_per_iter
-
-        yield image[start:stop]
-
-        row_index += rows_per_iter
-
-
-def image_comparison_rgb((slice1, slice2)):
     diff = np.subtract(slice1, slice2)
-    abs_diff = np.absolute(diff)
-    return np.sum(abs_diff)
+    squared = np.square(diff)
+    summed = np.sum(squared, dtype=np.uint64)
+    return (index, summed)
 
 
-def image_comparison_rgb2((slice1, slice2, index)):
-    overlap = np.bitwise_and(slice1, slice2)
-    return (index, np.sum(overlap))
-
-
-def create_alpha_representation(individual):
-    return individual.create_representation(alpha=individual.alpha)
+def image_comparison_rgba2((slice1, slice2, index)):
+    rgb1 = converters.rgba_to_rgb(slice1).astype(np.int64)
+    rgb2 = converters.rgba_to_rgb(slice2).astype(np.int64)
+    distance = np.linalg.norm(rgb1 - rgb2)
+    return (index, distance)

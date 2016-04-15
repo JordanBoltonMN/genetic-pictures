@@ -1,168 +1,147 @@
 import random
 
-import cv2
 import numpy as np
+from PIL import Image, ImageDraw
 
 import converters
 
-def scale_iterable(iterable, factor):
-    return tuple([i * factor for i in iterable])
 
-def offset_iterable(iterable, low, high, minimum=None, maximum=None):
-    l = []
-
-    for element in iterable:
-        offset_value = element + random.randint(low, high)
-
-        if minimum is not None and offset_value < minimum:
-            offset_value = minimum
-        elif maximum is not None and offset_value > maximum:
-            offset_value = maximum
-
-        l.append(offset_value)
-
-    return tuple(l)
+def random_point(dimensions):
+    (height, width) = dimensions
+    return [
+        random.randint(0, width - 1),
+        random.randint(0, height - 1),
+    ]
 
 
-def random_x_position(width):
-    return random.randint(0, width - 1)
-
-
-def random_y_position(height):
-    return random.randint(0, height - 1)
-
-
-def random_position(image_dimensions):
-    (width, height) = image_dimensions
-    return (random_x_position(width), random_y_position(height))
-
-
-def random_color():
-    return (
+def random_rgba():
+    return [
         random.randint(0, 255),
         random.randint(0, 255),
         random.randint(0, 255),
-    )
+        random.randint(0, 255)
+    ]
 
 
-def offset_color(color, low=-10, high=10):
-    return offset_iterable(color, low, high, 0, 255)
-
-
-class BaseIndividual(object):
-    def __init__(self, problem, fitness=None):
-        (height, width, _) = problem.image.shape
-
-        self.image_dimensions = (height, width)
-        self.image_dtype = problem.image.dtype
-        self.problem = problem
+class Individual(object):
+    def __init__(self, image_dimensions, fitness=None):
         self.fitness = fitness
+        self.image_dimensions = image_dimensions
 
-    def create_representation(self, alpha=None):
+    def breed(self, other):
         raise NotImplementedError()
 
-    def mutate(self):
+    def mutate(self, mutation_rate):
+        raise NotImplementedError()
+
+    def representation(self):
         raise NotImplementedError()
 
     def json(self):
         return {"fitness" : self.fitness}
 
 
-class Polygon(BaseIndividual):
-    def __init__(self, problem, num_points, points=None, color=None, alpha=200,
+class TrianglePool(Individual):
+    # rgba + 3 (x, y) points
+    POOL_DATA = 4 + (3 * 2)
+
+    def __init__(self, image_dimensions, size=128, pool=None,
                  **kwargs):
-        super(Polygon, self).__init__(problem, **kwargs)
+        super(TrianglePool, self).__init__(image_dimensions, **kwargs)
 
-        if points is None:
-            points = []
-            for _ in range(num_points):
-                points.append(random_position(self.image_dimensions))
-            # points = [random_position(problem) for _ in range(num_points)]
-            points = np.array(points, dtype=np.int32)
-            points = points.reshape(-1, 1, 2)
+        # pool is a 2D array in the form of
+        # [individial][r, g, b, a, x1, y1, x2, y2, x3, y3]
+
+        if pool is not None:
+            self.pool = self.load_pool(pool)
         else:
-            assert len(points) == num_points
-            points = np.array(points)
+            self.pool = self.create_pool(size)
 
-        if color is None:
-            color = random_color()
+    def load_pool(self, pool):
+        """
+            initializes the pool attribute to the list of lists
+        """
+        pool_size = len(pool)
+        return np.array(pool, dtype=np.uint8) \
+                 .reshape((pool_size, self.POOL_DATA))
 
-        self.num_points = num_points
-        self.points = points
-        self.color = random_color()
-        self.alpha = alpha
+    def create_pool(self, size):
+        pool = []
+        for i in range(size):
+            color = random_rgba()
+            points = self.random_triangle(self.image_dimensions)
+            pool.append(color + points)
 
-    def create_representation(self, alpha=None):
+        return self.load_pool(pool)
+
+    def breed(self, other):
+        """
+            returns an instance of the same class.
+            The child's pool is a combination of both parents.
+            Crossover is done by converting both pools to bits, then
+            splitting somewhere between 20-80 percent.
+        """
+        pa_bits = np.unpackbits(self.pool.view(np.uint8))
+        ma_bits = np.unpackbits(other.pool.view(np.uint8))
+
+        assert pa_bits.size == ma_bits.size
+
+        split = int(random.uniform(0.20, 0.80) * pa_bits.size)
+        child_bits = np.zeros_like(pa_bits)
+        child_bits[:split] = pa_bits[:split]
+        child_bits[split:] = ma_bits[split:]
+
+        child = np.packbits(child_bits) \
+                  .view(self.pool.dtype) \
+                  .reshape(self.pool.shape)
+
+        return self.__class__(self.image_dimensions, pool=child)
+
+    def mutate(self, mutation_rate):
+        """
+            converts pool to a bit array, then randomly flips some bits based
+            on the given mutation rate.
+        """
+
+        bits = np.unpackbits(self.pool.view(np.uint8))
+        mutations = np.random.random(bits.size)
+        mutations_location = mutations <= mutation_rate
+
+        # I don't know how to 'flip 0 to 1 and 1 to 0 where mask exists'
+        # so this is a ghetto solution
+        bits[mutations_location] += 2
+        bits[bits == 2] = 1
+        bits[bits == 3] = 0
+
+        self.pool = np.packbits(bits) \
+                      .view(self.pool.dtype) \
+                      .reshape(self.pool.shape)
+
+    def representation(self):
         (height, width) = self.image_dimensions
-        dtype = self.image_dtype
+        result = Image.new("RGBA", (width, height), (255, 255, 255, 0))
 
-        representation = np.full((height, width, 3), 0, dtype=dtype)
-        cv2.fillPoly(representation, [self.points], self.color)
+        for individual in self.pool:
+            rgba = tuple(individual[:4])
 
-        if alpha is None:
-            return representation
+            points = [(individual[i], individual[i + 1]) \
+                      for i in range(4, len(individual), 2)]
 
-        alpha_mask = np.full((height, width, 1), 0, dtype=dtype)
-        alpha_mask[np.any(representation, axis=-1)] = alpha
-        return np.dstack((representation, alpha_mask))
+            workspace = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+            drawer = ImageDraw.Draw(workspace)
+            drawer.polygon(points, fill=rgba)
+
+            result = Image.alpha_composite(result, workspace)
+
+        return np.array(result, dtype=np.uint8)
 
     def json(self):
-        d = super(Polygon, self).json()
-        d.update(
-            num_points=self.num_points,
-            points=self.points.tolist(),
-            color=self.color,
-            alpha=self.alpha,
-        )
+        d = super(TrianglePool, self).json()
+        d.update(pool=self.pool.tolist())
         return d
 
-    def mutate(self):
-        base = self.json()
-
-        mutation_type = random.randint(0, 1)
-        if mutation_type is 0:
-            return self._mutate_point()
-        elif mutation_type is 1:
-            return self._mutate_color()
-        else:
-            raise ValueError("should never reach here")
-
-    def _mutate_point(self):
-        kwargs = self.json()
-        points = kwargs["points"]
-        point_index = random.randint(0, self.num_points - 1)
-        (height, width) = self.image_dimensions
-
-        # [True, False] == [y coordinate, x_coordinate]
-        if random.choice([True, False]):
-            points[point_index][0][0] = random_y_position(height)
-        else:
-            points[point_index][0][1] = random_x_position(width)
-
-        return kwargs
-
-    def _mutate_color(self):
-        kwargs = self.json()
-
-        color = list(kwargs["color"])
-        color[random.randint(0, 2)] = random.randint(0, 255)
-        kwargs["color"] = tuple(color)
-
-        return kwargs
-
-
-class Triangle(Polygon):
-    def __init__(self, problem, **kwargs):
-        kwargs["num_points"] = 3
-        super(Triangle, self).__init__(problem, **kwargs)
-
-
-name_to_obj = {}
-to_check = [BaseIndividual]
-while to_check:
-    cls = to_check.pop()
-    for sub_cls in cls.__subclasses__():
-        name = sub_cls.__name__
-        if name not in name_to_obj:
-            name_to_obj[name] = sub_cls
-            to_check.append(sub_cls)
+    def random_triangle(self, dimensions):
+        points = []
+        for _ in range(3):
+            points.extend(random_point(dimensions))
+        return points

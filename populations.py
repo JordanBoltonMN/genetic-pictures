@@ -1,99 +1,73 @@
+from math import ceil, floor
+import numpy as np
 import random
 
-import numpy as np
+import mp
+from species import TrianglePool
 
-import species
 
-
-class BasePopulation(object):
-    def __init__(self, problem, species_cls, individuals=None, size=100,
-                 **kwargs):
+class Population(object):
+    def __init__(self, problem, size=128,
+                 mutation_rate=0.01, selection_rate=0.15):
         self.problem = problem
-        self.species_cls = species_cls
+        self.size = size
+        self.mutation_rate = mutation_rate
+        self.selection_rate = selection_rate
 
-        if individuals is None:
-            self.individuals = self.create_individuals(size)
-        else:
-            self.individuals = self.load_individuals(individuals)
+        self.inhabitants = self.create_inhabitants(size)
 
-    def __iter__(self):
-        return iter(self.individuals)
+    def setup(self):
+        self.update_fitness()
 
-    def __len__(self):
-        return len(self.individuals)
+    def update_fitness(self):
+        pool = mp.MPIndividualFitness(self.problem.image_np)
+        pool(self.inhabitants)
+        self.inhabitants.sort(key=lambda individual: individual.fitness)
 
-    def __getitem__(self, index):
-        return self.individuals[index]
+    def create_inhabitants(self, size):
+        dimensions = self.problem.image_dimensions
+        return [TrianglePool(dimensions) for _ in range(size)]
 
-    def __setitem__(self, index, value):
-        self.individuals[index] = value
-
-    @property
-    def fitness(self):
-        return sum([individual.fitness for individual in self])
-
-    def create_individuals(self, size):
-        individuals = []
-        for i in range(size):
-            individuals.append(self.species_cls(self.problem))
-        return individuals
-
-    def load_individuals(self, individuals):
-        return [self.species_cls(self.problem, **d) for d in individuals]
-
-    def new_population(self, individuals):
-        return self.__class__(self.problem, individuals=individuals)
-
-    def breed_with(self, other):
-        assert len(self) == len(other)
+    def generation(self):
+        stud_count = int(floor(len(self.inhabitants) * self.selection_rate))
+        random_count = int(ceil(1 / self.selection_rate))
 
         children = []
-        pool1 = list(self)
-        pool2 = list(other)
-        random.shuffle(pool1)
-        random.shuffle(pool2)
+        for stud in self.inhabitants[:stud_count]:
+            for _ in range(random_count):
+                mate_index = random.randint(0, stud_count - 1)
+                mate = self.inhabitants[mate_index]
 
-        for i, individual1 in enumerate(pool1):
-            individual2 = pool2[i]
-            children.append(individual1.breed_with(individual2))
+                while stud is mate:
+                    mate_index = random.randint(0, stud_count - 1)
+                    mate = self.inhabitants[mate_index]
 
-        json_children = [child.json() for child in children]
-        return self.new_population(json_children)
+                children.append(stud.breed(mate))
 
-    def mutate(self, mutation_rate):
-        for individual in self:
-            if random.random() < mutation_rate:
-                individual.mutate()
+        children = children[:len(self.inhabitants)]
 
-    def create_representation(self):
-        mask = np.zeros_like(self.problem.image)
-        for individual in self:
-            representation = individual.create_representation()
-            np.copyto(mask, representation, where=representation > 0)
+        while len(children) != len(self.inhabitants):
+            stud = random.choice(self.inhabitants[:stud_count])
+            mate_index = random.randint(0, stud_count - 1)
+            mate = self.inhabitants[mate_index]
 
-        return mask
+            while stud is mate:
+                mate_index = random.randint(0, stud_count - 1)
+                mate = self.inhabitants[mate_index]
+
+            children.append(stud.breed(mate))
+
+        for child in children:
+            child.mutate(self.mutation_rate)
+
+        self.inhabitants = children
+        self.update_fitness()
+
+    def representation(self):
+        return self.inhabitants[0].representation().astype(np.uint8)
 
     def json(self):
         return {
-            "individuals" : [individual.json() for individual in self],
+            "inhabitants" : [i.json() for i in self.inhabitants],
+            "mutation_rate" : self.mutation_rate
         }
-
-
-class EllipsePopulation(BasePopulation):
-    def __init__(self, problem, **kwargs):
-        super(EllipsePopulation, self).__init__(
-            problem,
-            species.Ellipse,
-            **kwargs
-        )
-
-
-name_to_obj = {}
-to_check = [BasePopulation]
-while to_check:
-    cls = to_check.pop()
-    for sub_cls in cls.__subclasses__():
-        name = sub_cls.__name__
-        if name not in name_to_obj:
-            name_to_obj[name] = sub_cls
-            to_check.append(sub_cls)
