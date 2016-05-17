@@ -28,7 +28,7 @@ class Individual(object):
         self.fitness = fitness
         self.image_dimensions = image_dimensions
 
-    def breed(self, other):
+    def mate(self, other):
         raise NotImplementedError()
 
     def mutate(self, mutation_rate):
@@ -74,7 +74,7 @@ class TrianglePool(Individual):
 
         return self.load_pool(pool)
 
-    def breed(self, other):
+    def mate(self, other):
         """
             returns an instance of the same class.
             The child's pool is a combination of both parents.

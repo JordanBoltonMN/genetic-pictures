@@ -1,3 +1,4 @@
+from __future__ import division
 from math import ceil, floor
 import numpy as np
 import random
@@ -29,39 +30,28 @@ class Population(object):
         return [TrianglePool(dimensions) for _ in range(size)]
 
     def generation(self):
-        stud_count = int(floor(len(self.inhabitants) * self.selection_rate))
-        random_count = int(ceil(1 / self.selection_rate))
-
+        tournament_size = self.size // 10
         children = []
-        for stud in self.inhabitants[:stud_count]:
-            for _ in range(random_count):
-                mate_index = random.randint(0, stud_count - 1)
-                mate = self.inhabitants[mate_index]
-
-                while stud is mate:
-                    mate_index = random.randint(0, stud_count - 1)
-                    mate = self.inhabitants[mate_index]
-
-                children.append(stud.breed(mate))
-
-        children = children[:len(self.inhabitants)]
 
         while len(children) != len(self.inhabitants):
-            stud = random.choice(self.inhabitants[:stud_count])
-            mate_index = random.randint(0, stud_count - 1)
-            mate = self.inhabitants[mate_index]
+            pa = self.tournament_selection(tournament_size)
+            ma = self.tournament_selection(tournament_size)
+            while pa is ma:
+                ma = self.tournament_selection(tournament_size)
 
-            while stud is mate:
-                mate_index = random.randint(0, stud_count - 1)
-                mate = self.inhabitants[mate_index]
-
-            children.append(stud.breed(mate))
-
-        for child in children:
-            child.mutate(self.mutation_rate)
+            child = pa.mate(ma)
+            children.append(child)
 
         self.inhabitants = children
         self.update_fitness()
+
+    def tournament_selection(self, tournament_size):
+        contestants = []
+        for _ in range(tournament_size):
+            contestants.append(random.choice(self.inhabitants))
+
+        contestants.sort(key=lambda individual: individual.fitness)
+        return contestants[0]
 
     def representation(self):
         return self.inhabitants[0].representation().astype(np.uint8)

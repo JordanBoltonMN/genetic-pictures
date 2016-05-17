@@ -9,8 +9,7 @@ import time
 import numpy as np
 from PIL import Image
 
-from population import Population
-
+from populations import Population
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -30,10 +29,11 @@ class Problem(object):
         self.image_dimensions = (height, width)
 
         self.current_generation = 0
-        self.generations = 5000
+        self.generations = 10000
         self.seed = seed or calendar.timegm(time.gmtime())
 
-        self.population = None  # look in the setup method
+        # look in the method self.setup
+        self.population = None
 
     def run(self):
         self.setup()
@@ -57,10 +57,10 @@ class Problem(object):
         self.population.setup()
 
     def should_save_snapshot(self):
-        return True
+        return (self.current_generation % 100) == 0
 
     def should_save_image(self):
-        return True
+        return (self.current_generation % 100) == 0
 
     def save_snapshot(self):
         filepath = self._generate_filepath("json")
@@ -88,8 +88,6 @@ class Problem(object):
         return directory
 
     def _generate_filepath(self, extension):
-        directory = self._results_directory()
-
         root = os.path.basename(self.dst_name)
         padded_generation = str(self.current_generation).zfill(7)
         file_name = "{root}_gen_{padded_generation}.{extension}".format(
@@ -98,8 +96,8 @@ class Problem(object):
             extension=extension,
         )
 
-        return os.path.join(directory, file_name)
+        return os.path.join(self._results_directory(), file_name)
 
 if __name__ == "__main__":
-    problem = Problem("butters3.png")
+    problem = Problem("obama.png")
     problem.run()

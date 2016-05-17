@@ -69,7 +69,7 @@ class MPIndividualFitness(MultiprocessingBase):
                 yield (target_slice, representation_slice, i)
 
     def mapping_function(self):
-        return image_comparison_rgba2
+        return image_comparison_rgba
 
     def reduce(self, imap_iter):
         tally = {}
@@ -97,17 +97,12 @@ def np_slicing_generator(np_array, rows_per_iter):
 
 
 def image_comparison_rgba((slice1, slice2, index)):
-    slice1 = slice.astype(dtype=np.int16)
-    slice2 = slice.astype(dtype=np.int16)
+    # ensure no overflow issues
+    slice1 = slice1.astype(dtype=np.int32)
+    slice2 = slice2.astype(dtype=np.int32)
 
-    diff = np.subtract(slice1, slice2)
-    squared = np.square(diff)
-    summed = np.sum(squared, dtype=np.uint64)
-    return (index, summed)
-
-
-def image_comparison_rgba2((slice1, slice2, index)):
-    rgb1 = converters.rgba_to_rgb(slice1).astype(np.int64)
-    rgb2 = converters.rgba_to_rgb(slice2).astype(np.int64)
-    distance = np.linalg.norm(rgb1 - rgb2)
-    return (index, distance)
+    rgb_diff_squared = np.square(slice1 - slice2)
+    pixel_diff_squared = np.sum(rgb_diff_squared, axis=-1)
+    pixel_diff = np.sqrt(pixel_diff_squared)
+    slice_diff = int(np.sum(pixel_diff))
+    return (index, slice_diff)
